@@ -1,4 +1,4 @@
-name: PDF Scraper YAML Only
+name: Roll PDF JSON Generator
 
 on:
   workflow_dispatch:
@@ -6,45 +6,33 @@ on:
     - cron: "0 */6 * * *"
 
 jobs:
-  scrape:
+  build-json:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Scrape
+      - name: Generate JSON
         run: |
-          echo "[]" > results.json
+          echo "[" > results.json
 
           for i in $(seq -w 1 60); do
             ROLL="1111220250$i"
             URL="https://sbte-api.anantdrishti.com/util/downloadResult?rollNumber=$ROLL"
 
-            echo "Fetching $ROLL"
-
-            RESPONSE=$(curl -sL "$URL" | tr -d '\000')
-
-            if echo "$RESPONSE" | jq empty >/dev/null 2>&1; then
-              # valid JSON
-              jq --arg roll "$ROLL" --arg data "$RESPONSE" \
-                '. += [{"rollNumber": $roll, "raw": $data}]' \
-                results.json > tmp.json && mv tmp.json results.json
+            if [ "$i" -eq 60 ]; then
+              echo "  {\"roll\": \"$ROLL\", \"url\": \"$URL\"}" >> results.json
             else
-              # not JSON
-              jq --arg roll "$ROLL" \
-                '. += [{"rollNumber": $roll, "error": "Invalid or empty response"}]' \
-                results.json > tmp.json && mv tmp.json results.json
+              echo "  {\"roll\": \"$ROLL\", \"url\": \"$URL\"}," >> results.json
             fi
           done
 
-      - name: Commit
+          echo "]" >> results.json
+
+      - name: Commit JSON
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
           git add results.json
-          git commit -m "Updated results.json" || echo "No changes"
+          git commit -m "Updated roll links JSON" || echo "No changes"
           git push
