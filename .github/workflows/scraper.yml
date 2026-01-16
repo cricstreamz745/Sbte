@@ -3,7 +3,7 @@ name: PDF Scraper YAML Only
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"   # every 6 hours
+    - cron: "0 */6 * * *"
 
 jobs:
   scrape:
@@ -14,9 +14,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install jq
-        run: sudo apt-get install -y jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Scrape PDFs
+      - name: Scrape
         run: |
           echo "[]" > results.json
 
@@ -26,20 +26,22 @@ jobs:
 
             echo "Fetching $ROLL"
 
-            RESPONSE=$(curl -s "$URL")
+            RESPONSE=$(curl -sL "$URL" | tr -d '\000')
 
-            if [ -n "$RESPONSE" ]; then
-              jq --arg roll "$ROLL" --argjson data "$RESPONSE" \
-                '. += [{"rollNumber": $roll, "data": $data}]' \
-                results.json > temp.json && mv temp.json results.json
+            if echo "$RESPONSE" | jq empty >/dev/null 2>&1; then
+              # valid JSON
+              jq --arg roll "$ROLL" --arg data "$RESPONSE" \
+                '. += [{"rollNumber": $roll, "raw": $data}]' \
+                results.json > tmp.json && mv tmp.json results.json
             else
+              # not JSON
               jq --arg roll "$ROLL" \
-                '. += [{"rollNumber": $roll, "error": true}]' \
-                results.json > temp.json && mv temp.json results.json
+                '. += [{"rollNumber": $roll, "error": "Invalid or empty response"}]' \
+                results.json > tmp.json && mv tmp.json results.json
             fi
           done
 
-      - name: Commit JSON
+      - name: Commit
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
