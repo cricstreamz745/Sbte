@@ -1,0 +1,48 @@
+name: PDF Scraper YAML Only
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Scrape PDFs
+        run: |
+          echo "[]" > results.json
+
+          for i in $(seq -w 1 60); do
+            ROLL="1111220250$i"
+            URL="https://sbte-api.anantdrishti.com/util/downloadResult?rollNumber=$ROLL"
+
+            echo "Fetching $ROLL"
+
+            RESPONSE=$(curl -s "$URL")
+
+            if [ -n "$RESPONSE" ]; then
+              jq --arg roll "$ROLL" --argjson data "$RESPONSE" \
+                '. += [{"rollNumber": $roll, "data": $data}]' \
+                results.json > temp.json && mv temp.json results.json
+            else
+              jq --arg roll "$ROLL" \
+                '. += [{"rollNumber": $roll, "error": true}]' \
+                results.json > temp.json && mv temp.json results.json
+            fi
+          done
+
+      - name: Commit JSON
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add results.json
+          git commit -m "Updated results.json" || echo "No changes"
+          git push
